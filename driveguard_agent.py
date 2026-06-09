@@ -79,9 +79,28 @@ class DriveGuardAPI:
         return self._call({"action": "report_inventory", "system_id": system_id, "drives": drives})
 
 # ─── Drive Discovery ──────────────────────────────────────────────────────────
+def get_os_drive() -> str:
+    """Detect the OS/system drive by checking root mount point."""
+    try:
+        result = subprocess.run(["df", "/"], capture_output=True, text=True)
+        if result.returncode == 0:
+            lines = result.stdout.strip().split('\n')
+            if len(lines) > 1:
+                parts = lines[1].split()
+                if parts:
+                    dev = parts[0]
+                    if dev.startswith('/dev/'):
+                        return dev.rstrip('0123456789')
+    except Exception:
+        pass
+    return ""
+
 def list_drives() -> list:
-    """Return all block devices that are whole disks (not partitions)."""
+    """Return all block devices that are whole disks (not partitions), excluding OS drive."""
     drives = []
+    os_drive = get_os_drive()
+    logging.debug("Detected OS drive: %s", os_drive or "none")
+    
     result = subprocess.run(
         ["lsblk", "-J", "-o", "NAME,SIZE,TYPE,ROTA,TRAN,MODEL,SERIAL,VENDOR,PHY-SEC,LOG-SEC"],
         capture_output=True, text=True
@@ -94,6 +113,12 @@ def list_drives() -> list:
     for dev in data.get("blockdevices", []):
         if dev.get("type") != "disk":
             continue
+        
+        device_path = f"/dev/{dev['name']}"
+        if os_drive and device_path.startswith(os_drive):
+            logging.info("Skipping OS drive: %s", device_path)
+            continue
+        
         transport = (dev.get("tran") or "unknown").upper()
         interface = "SATA"
         if "NVME" in transport or "NVME" in (dev.get("name","")).upper():
@@ -163,11 +188,7 @@ def run_health_check(device: str) -> dict:
 
 # ─── Wipe Engine ─────────────────────────────────────────────────────────────
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from wipe_engine import wipe_nist_800_88, wipe_dod_5220, verify_wipe
-try:
-    from wipe_engine import wipe_enhanced_erase
-except ImportError:
-    wipe_enhanced_erase = None
+from wipe_engine import wipe_nist_800_88, wipe_enhanced_erase, wipe_dod_5220, verify_wipe
 
 # ─── Job Runner ───────────────────────────────────────────────────────────────
 class JobRunner:
@@ -219,10 +240,7 @@ class JobRunner:
                 if standard == "NIST_800_88":
                     wipe_result = wipe_nist_800_88(device, progress_cb=_progress)
                 elif standard in ("Secure_Erase", "enhanced_erase"):
-                    if wipe_enhanced_erase:
-                        wipe_result = wipe_enhanced_erase(device, progress_cb=_progress)
-                    else:
-                        raise RuntimeError("Enhanced erase not available in this agent version")
+                    wipe_result = wipe_enhanced_erase(device, progress_cb=_progress)
                 elif standard == "DoD_5220":
                     wipe_result = wipe_dod_5220(device, progress_cb=_progress)
                 else:
