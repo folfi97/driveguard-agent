@@ -162,7 +162,12 @@ def run_health_check(device: str) -> dict:
     return result
 
 # ─── Wipe Engine ─────────────────────────────────────────────────────────────
-from wipe_engine import wipe_nist_800_88, wipe_enhanced_erase, wipe_dod_5220, verify_wipe
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from wipe_engine import wipe_nist_800_88, wipe_dod_5220, verify_wipe
+try:
+    from wipe_engine import wipe_enhanced_erase
+except ImportError:
+    wipe_enhanced_erase = None
 
 # ─── Job Runner ───────────────────────────────────────────────────────────────
 class JobRunner:
@@ -214,7 +219,10 @@ class JobRunner:
                 if standard == "NIST_800_88":
                     wipe_result = wipe_nist_800_88(device, progress_cb=_progress)
                 elif standard in ("Secure_Erase", "enhanced_erase"):
-                    wipe_result = wipe_enhanced_erase(device, progress_cb=_progress)
+                    if wipe_enhanced_erase:
+                        wipe_result = wipe_enhanced_erase(device, progress_cb=_progress)
+                    else:
+                        raise RuntimeError("Enhanced erase not available in this agent version")
                 elif standard == "DoD_5220":
                     wipe_result = wipe_dod_5220(device, progress_cb=_progress)
                 else:
