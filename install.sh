@@ -78,10 +78,10 @@ if [[ -f "$SCRIPT_DIR/driveguard_agent.py" ]]; then
   success "Agent files copied from local directory."
 else
   info "Downloading agent files..."
-  AGENT_BASE="https://raw.githubusercontent.com/driveguard/agent/main"
-  curl -fsSL "${AGENT_BASE}/driveguard_agent.py" -o "$AGENT_DIR/driveguard_agent.py"
-  curl -fsSL "${AGENT_BASE}/wipe_engine.py"      -o "$AGENT_DIR/wipe_engine.py"
-  success "Agent files downloaded."
+   AGENT_BASE="https://raw.githubusercontent.com/folfi97/driveguard-agent/main"
+   curl -fsSL "${AGENT_BASE}/driveguard_agent.py" -o "$AGENT_DIR/driveguard_agent.py"
+   curl -fsSL "${AGENT_BASE}/wipe_engine.py"      -o "$AGENT_DIR/wipe_engine.py"
+   success "Agent files downloaded."
 fi
 
 chmod +x "$AGENT_DIR/driveguard_agent.py"
