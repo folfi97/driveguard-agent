@@ -78,6 +78,9 @@ class DriveGuardAPI:
     def report_inventory(self, system_id: str, drives: list) -> dict:
         return self._call({"action": "report_inventory", "system_id": system_id, "drives": drives})
 
+    def report_drive_change(self, system_id: str, change_type: str, drive: dict) -> dict:
+        return self._call({"action": "report_drive_change", "system_id": system_id, "change_type": change_type, "drive": drive})
+
 # ─── Drive Discovery ──────────────────────────────────────────────────────────
 def get_os_drive() -> str:
     """Detect the OS/system drive by checking root mount point."""
@@ -309,6 +312,35 @@ def get_machine_id() -> str:
             pass
     return socket.gethostname()
 
+# ─── Drive Change Detector ───────────────────────────────────────────────────
+class DriveChangeDetector:
+    def __init__(self):
+        self.previous_drives = {}
+    
+    def detect_changes(self, current_drives: list, api: DriveGuardAPI, system_id: str):
+        """Detect plugged/unplugged drives and report immediately."""
+        current_map = {d["device"]: d for d in current_drives}
+        
+        # Detect plugged drives (new devices)
+        for device, drive in current_map.items():
+            if device not in self.previous_drives:
+                logging.info("Drive plugged: %s", device)
+                try:
+                    api.report_drive_change(system_id, "plugged", drive)
+                except Exception as e:
+                    logging.warning("Failed to report plugged drive: %s", e)
+        
+        # Detect unplugged drives (removed devices)
+        for device in self.previous_drives:
+            if device not in current_map:
+                logging.info("Drive unplugged: %s", device)
+                try:
+                    api.report_drive_change(system_id, "unplugged", {"device": device})
+                except Exception as e:
+                    logging.warning("Failed to report unplugged drive: %s", e)
+        
+        self.previous_drives = current_map
+
 # ─── Main loop ────────────────────────────────────────────────────────────────
 def main():
     args = parse_args()
@@ -321,6 +353,7 @@ def main():
     hostname = cfg["agent"].get("hostname", socket.gethostname())
 
     api = DriveGuardAPI(api_url, token)
+    change_detector = DriveChangeDetector()
 
     logging.info("DriveGuard Agent starting — endpoint: %s", api.endpoint)
 
@@ -359,6 +392,10 @@ def main():
     while True:
         try:
             drives = list_drives()
+            
+            # Detect and report drive changes in real-time
+            change_detector.detect_changes(drives, api, system_id)
+            
             hb_response = api.heartbeat(system_id, {
                 "hostname":      hostname,
                 "agent_version": "2.0.1",
